@@ -95,18 +95,21 @@
   #markbtn{color:var(--brass); border-color:rgba(217,162,75,.45);}
 
   /* ---------- sync nudge ---------- */
-  #syncrow{
+  .steprow{
     flex:0 0 auto; display:flex; align-items:center; justify-content:center;
-    gap:7px; padding:2px 12px 8px;
+    gap:7px; padding:2px 12px 6px;
     font-family:var(--f-label); font-size:10px; font-weight:600;
     letter-spacing:.16em; text-transform:uppercase; color:var(--dim);
   }
-  #syncrow button{
+  .steprow button{
     background:none; border:1px solid var(--ink-line); color:var(--dim);
-    width:26px; height:26px; border-radius:50%; cursor:pointer;
-    font-family:var(--f-data); font-size:14px; line-height:1; padding:0;
+    width:30px; height:30px; border-radius:50%; cursor:pointer;
+    font-family:var(--f-data); font-size:15px; line-height:1; padding:0;
   }
-  #syncval{font-family:var(--f-data); font-size:12px; color:var(--cyan); min-width:52px; text-align:center;}
+  .steprow .val{font-family:var(--f-data); font-size:13px; color:var(--cyan); min-width:58px; text-align:center;}
+  .steprow .lbl{min-width:44px; text-align:right;}
+  /* the header pill shows the current rate and snaps back to 1.00 when tapped */
+  #speedbtn{width:auto; min-width:44px; padding:0 11px; border-radius:999px;}
 
   #markrow{flex:0 0 auto; display:none; gap:8px; padding:0 12px 10px;}
   #markrow.open{display:flex;}
@@ -214,10 +217,17 @@
       <button id="fwd15">15&nbsp;&#8631;</button>
     </div>
 
-    <div id="syncrow">
-      <span>Sync</span>
+    <div id="speedrow" class="steprow">
+      <span class="lbl">Speed</span>
+      <button id="speeddown">&minus;</button>
+      <span class="val" id="speedval">1.00&times;</span>
+      <button id="speedup">+</button>
+    </div>
+
+    <div id="syncrow" class="steprow">
+      <span class="lbl">Sync</span>
       <button id="syncdown">&minus;</button>
-      <span id="syncval">0.00s</span>
+      <span class="val" id="syncval">0.00s</span>
       <button id="syncup">+</button>
     </div>
 
@@ -280,8 +290,7 @@ let book = null, objURL = null;
 let pocket = false, dragging = false, dragT = 0;
 let lineIdx = -1, userScrolled = 0;
 let nowEl = null, nowWords = [], nowStart = 0, nowEnd = 0;
-const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 0.75];
-let speedIdx = 0;
+let speed = 1;                       // playback rate, 0.50 to 2.00 in 0.05 steps
 
 function fmt(s){
   s = Math.max(0, Math.floor(s||0));
@@ -448,12 +457,20 @@ function togglePlay(){
 $('#back15').onclick = ()=>{ au.currentTime=Math.max(0,au.currentTime-15); syncScript(true); save(); };
 $('#fwd15').onclick  = ()=>{ au.currentTime=Math.min(au.duration||1e9,au.currentTime+15); syncScript(true); save(); };
 
-$('#speedbtn').onclick = ()=>{
-  speedIdx=(speedIdx+1)%SPEEDS.length;
-  au.playbackRate=SPEEDS[speedIdx];
-  $('#speedbtn').textContent=SPEEDS[speedIdx].toFixed(2).replace(/0$/,'')+'×';
-  localStorage.setItem('nar_speed',speedIdx);
-};
+function showSpeed(){
+  const s = speed.toFixed(2);
+  $('#speedval').textContent = s + '×';
+  $('#speedbtn').textContent = s + '×';
+}
+function setSpeed(v){
+  speed = Math.min(2, Math.max(0.5, Math.round(v*20)/20));
+  au.playbackRate = speed;
+  showSpeed();
+  localStorage.setItem('nar_speed', speed);
+}
+$('#speeddown').onclick = ()=>setSpeed(speed-0.05);
+$('#speedup').onclick   = ()=>setSpeed(speed+0.05);
+$('#speedbtn').onclick  = ()=>{ setSpeed(1); toast('Speed reset to 1.00×'); };
 $('#pocketbtn').onclick = ()=>{
   if(actx){ toast('Reload to leave visualizer mode'); return; }
   pocket=!pocket;
@@ -753,7 +770,7 @@ async function openBook(id){
   book=await dbGet(id); if(!book) return;
   if(objURL) URL.revokeObjectURL(objURL);
   objURL=URL.createObjectURL(book.blob);
-  au.src=objURL; au.playbackRate=SPEEDS[speedIdx];
+  au.src=objURL; au.playbackRate=speed;
   $('#booktitle').textContent=book.title;
   au.currentTime=0;
   const seek=()=>{ if(book.pos>1){ try{ au.currentTime=book.pos; }catch(e){} } syncScript(true); };
@@ -777,8 +794,7 @@ function showPane(name){
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showPane(b.dataset.pane));
 
 (async function boot(){
-  speedIdx=Math.min(SPEEDS.length-1,Math.max(0,parseInt(localStorage.getItem('nar_speed')||'0',10)));
-  $('#speedbtn').textContent=SPEEDS[speedIdx].toFixed(2).replace(/0$/,'')+'×';
+  setSpeed(parseFloat(localStorage.getItem('nar_speed')) || 1);
   pocket=localStorage.getItem('nar_pocket')==='1';
   $('#pocketbtn').classList.toggle('on',pocket);
   showSync();
