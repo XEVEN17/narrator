@@ -45,6 +45,7 @@
     font-family:var(--f-label); font-size:11px; font-weight:600;
     letter-spacing:.18em; text-transform:uppercase; color:var(--dim);
   }
+  #build{color:var(--ink-line); letter-spacing:.1em;}
 
   header{
     display:flex; align-items:center; gap:10px;
@@ -194,7 +195,7 @@
 
 <header>
   <div style="min-width:0;flex:1 1 auto">
-    <div class="eyebrow">Narrator</div>
+    <div class="eyebrow">Narrator <span id="build">b3</span></div>
     <div class="title" id="booktitle">No book loaded</div>
   </div>
   <button class="iconbtn" id="speedbtn" title="Playback speed">1.0×</button>
@@ -800,7 +801,17 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showPane(b.data
   showSync();
 
   if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => reg.update())
+      .catch(()=>{});
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(reloaded) return;              // guard against a reload loop
+      reloaded = true;
+      location.reload();
+    });
+  }
   sizeDial(); drawDial(); startLoop();
 
   try{
