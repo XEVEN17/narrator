@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B1020">
+<title>Narrator</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0B1020;
+    --ink-raised:#141B31;
+    --ink-line:#222C48;
+    --brass:#D9A24B;
+    --cyan:#4FC3E8;
+    --paper:#F2EFE6;
+    --dim:#6C7691;
+    --ahead:#5B6584;      /* not yet spoken */
+    --behind:#38415C;     /* already spoken, earlier lines */
+
+    --f-label:"IBM Plex Sans Condensed", "Roboto Condensed", system-ui, sans-serif;
+    --f-data:"IBM Plex Mono", ui-monospace, "Courier New", monospace;
+    --f-read:"Literata", Georgia, "Times New Roman", serif;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html{height:100%;}
+  /* body is pinned: the transcript is the only thing in the app that scrolls */
+  body{
+    margin:0; position:fixed; inset:0; overflow:hidden;
+    background:var(--ink); color:var(--paper);
+    font-family:var(--f-read);
+    display:flex; flex-direction:column;
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+
+  .eyebrow{
+    font-family:var(--f-label); font-size:11px; font-weight:600;
+    letter-spacing:.18em; text-transform:uppercase; color:var(--dim);
+  }
+
+  header{
+    display:flex; align-items:center; gap:10px;
+    padding:12px 16px 9px; border-bottom:1px solid var(--ink-line);
+    flex:0 0 auto;
+  }
+  header .title{
+    flex:1 1 auto; min-width:0;
+    font-family:var(--f-label); font-weight:600; font-size:16px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .iconbtn{
+    background:none; border:1px solid var(--ink-line); color:var(--dim);
+    width:36px; height:36px; border-radius:50%;
+    font-family:var(--f-label); font-size:13px; font-weight:600;
+    display:grid; place-items:center; cursor:pointer; flex:0 0 auto;
+  }
+  .iconbtn.on{color:var(--brass); border-color:var(--brass);}
+
+  nav{display:flex; flex:0 0 auto; border-bottom:1px solid var(--ink-line);}
+  nav button{
+    flex:1; background:none; border:0; border-bottom:2px solid transparent;
+    color:var(--dim); padding:10px 4px 8px; cursor:pointer;
+    font-family:var(--f-label); font-size:11px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase;
+  }
+  nav button[aria-selected="true"]{color:var(--paper); border-bottom-color:var(--brass);}
+
+  main{flex:1 1 auto; min-height:0; position:relative;}
+  .pane{position:absolute; inset:0; display:none; flex-direction:column; min-height:0;}
+  .pane.active{display:flex;}
+
+  /* ---------- dial ---------- */
+  #dialwrap{flex:0 0 auto; display:grid; place-items:center; padding:8px 0 0;}
+  #dial{touch-action:none; display:block;}
+
+  #transport{
+    flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+    gap:9px; padding:6px 12px 4px;
+  }
+  #transport button{
+    background:none; border:1px solid var(--ink-line); color:var(--paper);
+    border-radius:999px; height:40px; padding:0 14px; cursor:pointer;
+    font-family:var(--f-label); font-size:12px; font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase;
+  }
+  #transport button:active{border-color:var(--brass);}
+  #markbtn{color:var(--brass); border-color:rgba(217,162,75,.45);}
+
+  /* ---------- sync nudge ---------- */
+  #syncrow{
+    flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+    gap:7px; padding:2px 12px 8px;
+    font-family:var(--f-label); font-size:10px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--dim);
+  }
+  #syncrow button{
+    background:none; border:1px solid var(--ink-line); color:var(--dim);
+    width:26px; height:26px; border-radius:50%; cursor:pointer;
+    font-family:var(--f-data); font-size:14px; line-height:1; padding:0;
+  }
+  #syncval{font-family:var(--f-data); font-size:12px; color:var(--cyan); min-width:52px; text-align:center;}
+
+  #markrow{flex:0 0 auto; display:none; gap:8px; padding:0 12px 10px;}
+  #markrow.open{display:flex;}
+  #marktext{
+    flex:1; background:var(--ink-raised); border:1px solid var(--brass);
+    color:var(--paper); border-radius:8px; padding:11px 12px;
+    font-family:var(--f-read); font-size:15px; min-width:0;
+  }
+  #marktext:focus{outline:none; box-shadow:0 0 0 2px rgba(217,162,75,.25);}
+  #marksave{
+    background:var(--brass); border:0; color:#1B1305; border-radius:8px;
+    padding:0 16px; font-family:var(--f-label); font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase; font-size:12px; cursor:pointer;
+  }
+
+  /* ---------- transcript ---------- */
+  #script{
+    position:relative;
+    flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+    border-top:1px solid var(--ink-line);
+    padding:18px 20px 60vh; scrollbar-width:none;
+    max-width:760px; width:100%; margin:0 auto;
+  }
+  #script::-webkit-scrollbar{display:none;}
+
+  /* every line carries the same weight and size, so nothing reflows when the
+     active line changes — only colour moves. */
+  .line{
+    font-family:var(--f-read); font-weight:600;
+    font-size:19px; line-height:1.52; letter-spacing:.002em;
+    color:var(--ahead); margin:0 0 15px; cursor:pointer;
+    padding-left:13px; border-left:2px solid transparent;
+  }
+  .line.done{color:var(--behind);}
+  .line.now{border-left-color:var(--brass);}
+  .line span{transition:color .13s linear;}
+  .line.now span.said{color:var(--paper);}
+  .line.now span.saying{color:var(--brass);}
+
+  .empty{padding:24px 20px; color:var(--dim); font-family:var(--f-read); font-size:15px; line-height:1.6;}
+  .empty b{color:var(--paper);}
+  .empty code{font-family:var(--f-data); font-size:12.5px; color:var(--cyan); background:var(--ink-raised); padding:2px 5px; border-radius:4px;}
+  .empty pre{font-family:var(--f-data); font-size:12px; color:var(--cyan); background:var(--ink-raised); border:1px solid var(--ink-line); padding:11px 12px; border-radius:8px; overflow-x:auto; line-height:1.55;}
+
+  /* ---------- lists ---------- */
+  .scroll{flex:1 1 auto; min-height:0; overflow-y:auto; padding:6px 0 24px; max-width:760px; width:100%; margin:0 auto;}
+  .row{display:flex; align-items:center; gap:14px; padding:14px 18px; border-bottom:1px solid var(--ink-line); cursor:pointer;}
+  .row .stamp{font-family:var(--f-data); font-size:13px; color:var(--brass); flex:0 0 auto;}
+  .row .body{flex:1 1 auto; min-width:0;}
+  .row .note{font-family:var(--f-read); font-size:16px; line-height:1.35;}
+  .row .sub{font-family:var(--f-label); font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim); margin-top:5px;}
+  .row .kill{background:none; border:0; color:var(--dim); font-size:22px; line-height:1; padding:6px 2px; cursor:pointer; flex:0 0 auto;}
+  .row.playing .note{color:var(--brass);}
+  .bar{height:2px; background:var(--ink-line); margin-top:9px; border-radius:2px;}
+  .bar i{display:block; height:100%; background:var(--cyan); border-radius:2px;}
+
+  #addwrap{flex:0 0 auto; padding:14px 18px; border-top:1px solid var(--ink-line); max-width:760px; width:100%; margin:0 auto;}
+  .filebtn{
+    display:block; text-align:center; border:1px dashed var(--ink-line);
+    color:var(--dim); border-radius:10px; padding:15px;
+    font-family:var(--f-label); font-size:12px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase; cursor:pointer;
+  }
+  .filebtn:active{border-color:var(--brass); color:var(--brass);}
+  input[type=file]{display:none;}
+
+  #toast{
+    position:fixed; left:50%; bottom:calc(22px + env(safe-area-inset-bottom));
+    transform:translateX(-50%) translateY(14px);
+    background:var(--ink-raised); border:1px solid var(--ink-line);
+    color:var(--paper); padding:11px 18px; border-radius:999px;
+    font-family:var(--f-label); font-size:12px; letter-spacing:.1em;
+    text-transform:uppercase; font-weight:600;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:50;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  @media (prefers-reduced-motion:reduce){ *{transition:none !important;} }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="min-width:0;flex:1 1 auto">
+    <div class="eyebrow">Narrator</div>
+    <div class="title" id="booktitle">No book loaded</div>
+  </div>
+  <button class="iconbtn" id="speedbtn" title="Playback speed">1.0×</button>
+  <button class="iconbtn" id="pocketbtn" title="Pocket mode — plain audio, no visualizer">P</button>
+</header>
+
+<nav role="tablist">
+  <button role="tab" aria-selected="true"  data-pane="play">Playing</button>
+  <button role="tab" aria-selected="false" data-pane="marks">Marks</button>
+  <button role="tab" aria-selected="false" data-pane="library">Library</button>
+</nav>
+
+<main>
+  <section class="pane active" id="pane-play">
+    <div id="dialwrap"><canvas id="dial"></canvas></div>
+
+    <div id="transport">
+      <button id="back15">&#8630;&nbsp;15</button>
+      <button id="markbtn">+ Mark</button>
+      <button id="fwd15">15&nbsp;&#8631;</button>
+    </div>
+
+    <div id="syncrow">
+      <span>Sync</span>
+      <button id="syncdown">&minus;</button>
+      <span id="syncval">0.00s</span>
+      <button id="syncup">+</button>
+    </div>
+
+    <div id="markrow">
+      <input id="marktext" type="text" placeholder="Note for this moment" autocomplete="off">
+      <button id="marksave">Save</button>
+    </div>
+
+    <div id="script"></div>
+  </section>
+
+  <section class="pane" id="pane-marks">
+    <div id="transport" style="padding:10px 12px 6px"><button id="markbtn2">+ Mark this moment</button></div>
+    <div class="scroll" id="markslist"></div>
+  </section>
+
+  <section class="pane" id="pane-library">
+    <div class="scroll" id="liblist"></div>
+    <div id="addwrap">
+      <label class="filebtn" for="audiofile">Add a book &nbsp;·&nbsp; wav mp3 m4b</label>
+      <input id="audiofile" type="file" accept="audio/*,.m4b">
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+<audio id="au" preload="metadata"></audio>
+
+<script>
+/* ============================================================
+   Narrator v2
+   - <audio> element is always the source of truth (background safe)
+   - transcript highlights word by word between each line's start and end
+   - only #script scrolls; the document itself is pinned
+   ============================================================ */
+
+const $ = s => document.querySelector(s);
+const au = $('#au');
+
+/* ---------- IndexedDB ---------- */
+const DB_NAME = 'narrator', STORE = 'books';
+let _db;
+function db(){
+  if(_db) return Promise.resolve(_db);
+  return new Promise((res, rej)=>{
+    const rq = indexedDB.open(DB_NAME, 1);
+    rq.onupgradeneeded = ()=>{ const d=rq.result; if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:'id'}); };
+    rq.onsuccess = ()=>{ _db = rq.result; res(_db); };
+    rq.onerror = ()=>rej(rq.error);
+  });
+}
+const tx = mode => db().then(d => d.transaction(STORE, mode).objectStore(STORE));
+const dbGet = id => tx('readonly').then(s=>new Promise((r,j)=>{const q=s.get(id);q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error);}));
+const dbAll = ()  => tx('readonly').then(s=>new Promise((r,j)=>{const q=s.getAll();q.onsuccess=()=>r(q.result||[]);q.onerror=()=>j(q.error);}));
+const dbPut = v   => tx('readwrite').then(s=>new Promise((r,j)=>{const q=s.put(v);q.onsuccess=()=>r();q.onerror=()=>j(q.error);}));
+const dbDel = id  => tx('readwrite').then(s=>new Promise((r,j)=>{const q=s.delete(id);q.onsuccess=()=>r();q.onerror=()=>j(q.error);}));
+
+/* ---------- state ---------- */
+let book = null, objURL = null;
+let pocket = false, dragging = false, dragT = 0;
+let lineIdx = -1, userScrolled = 0;
+let nowEl = null, nowWords = [], nowStart = 0, nowEnd = 0;
+const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 0.75];
+let speedIdx = 0;
+
+function fmt(s){
+  s = Math.max(0, Math.floor(s||0));
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`
+           : `${m}:${String(x).padStart(2,'0')}`;
+}
+let toastTimer;
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),1900);
+}
+/* effective transcript clock = audio position + this book's manual nudge */
+const offset = () => (book && book.offset) || 0;
+const clock  = () => (dragging ? dragT : au.currentTime) + offset();
+
+/* ============================================================
+   AUDIO GRAPH (skipped entirely in pocket mode)
+   ============================================================ */
+let actx, analyser, srcNode, freq;
+function ensureGraph(){
+  if(pocket || actx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  try{
+    actx = new AC();
+    srcNode = actx.createMediaElementSource(au);
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.78;
+    srcNode.connect(analyser); analyser.connect(actx.destination);
+    freq = new Uint8Array(analyser.frequencyBinCount);
+  }catch(e){ actx=null; analyser=null; }
+}
+
+/* ============================================================
+   DIAL
+   ============================================================ */
+const cv = $('#dial'), ctx2 = cv.getContext('2d');
+const bars = new Float32Array(88);
+
+function sizeDial(){
+  const avail = Math.min(cv.parentElement.clientWidth - 24, 300);
+  const byHeight = Math.max(150, Math.min(avail, window.innerHeight * 0.30));
+  const cssW = Math.round(byHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  cv.style.width = cssW+'px'; cv.style.height = cssW+'px';
+  cv.width = Math.round(cssW*dpr); cv.height = Math.round(cssW*dpr);
+}
+window.addEventListener('resize', ()=>{ sizeDial(); drawDial(); });
+
+function drawDial(){
+  const W=cv.width, H=cv.height, cx=W/2, cy=H/2;
+  const R=W*0.335, ringW=Math.max(2,W*0.007);
+  const dur = book ? (book.dur || au.duration || 0) : 0;
+  const cur = dragging ? dragT : au.currentTime;
+  const frac = dur ? Math.min(1, cur/dur) : 0;
+  const TAU=Math.PI*2, TOP=-Math.PI/2;
+
+  ctx2.clearRect(0,0,W,H);
+
+  const live = analyser && !au.paused && !document.hidden;
+  if(live) analyser.getByteFrequencyData(freq);
+  for(let i=0;i<bars.length;i++){
+    let target=0;
+    if(live){
+      const b = Math.floor(Math.pow(i/bars.length,1.7)*(freq.length*0.72))+1;
+      target = freq[b]/255;
+    }
+    bars[i] += (target-bars[i]) * (live?0.42:0.09);
+    const len = Math.max(W*0.004, bars[i]*W*0.10);
+    const a = TOP + (i/bars.length)*TAU;
+    const r0 = R+ringW*1.8;
+    const passed = (i/bars.length) <= frac;
+    ctx2.strokeStyle = passed ? `rgba(79,195,232,${0.30+bars[i]*0.62})`
+                              : `rgba(108,118,145,${0.16+bars[i]*0.34})`;
+    ctx2.lineWidth = Math.max(1.2, W*0.0055); ctx2.lineCap='round';
+    ctx2.beginPath();
+    ctx2.moveTo(cx+Math.cos(a)*r0, cy+Math.sin(a)*r0);
+    ctx2.lineTo(cx+Math.cos(a)*(r0+len), cy+Math.sin(a)*(r0+len));
+    ctx2.stroke();
+  }
+
+  ctx2.strokeStyle='#222C48'; ctx2.lineWidth=ringW; ctx2.lineCap='butt';
+  ctx2.beginPath(); ctx2.arc(cx,cy,R,0,TAU); ctx2.stroke();
+
+  if(frac>0){
+    ctx2.strokeStyle='#4FC3E8'; ctx2.lineWidth=ringW*1.9; ctx2.lineCap='round';
+    ctx2.beginPath(); ctx2.arc(cx,cy,R,TOP,TOP+frac*TAU); ctx2.stroke();
+  }
+
+  if(book && dur){
+    ctx2.strokeStyle='#D9A24B'; ctx2.lineWidth=Math.max(1.6,W*0.0055);
+    (book.marks||[]).forEach(m=>{
+      const a=TOP+(m.t/dur)*TAU, r1=R-ringW*3.2, r2=R-ringW*8.4;
+      ctx2.beginPath();
+      ctx2.moveTo(cx+Math.cos(a)*r1, cy+Math.sin(a)*r1);
+      ctx2.lineTo(cx+Math.cos(a)*r2, cy+Math.sin(a)*r2);
+      ctx2.stroke();
+    });
+  }
+
+  if(dur){
+    const a=TOP+frac*TAU;
+    ctx2.fillStyle = dragging ? '#D9A24B' : '#F2EFE6';
+    ctx2.beginPath(); ctx2.arc(cx+Math.cos(a)*R, cy+Math.sin(a)*R, ringW*(dragging?3.1:2.2), 0, TAU); ctx2.fill();
+  }
+
+  ctx2.textAlign='center'; ctx2.textBaseline='middle';
+  ctx2.fillStyle = dragging ? '#D9A24B' : '#F2EFE6';
+  ctx2.font = `500 ${Math.round(W*0.098)}px "IBM Plex Mono", monospace`;
+  ctx2.fillText(fmt(cur), cx, cy-W*0.035);
+
+  ctx2.fillStyle='#6C7691';
+  ctx2.font = `600 ${Math.round(W*0.032)}px "IBM Plex Sans Condensed", sans-serif`;
+  ctx2.fillText(dur ? ('\u2212'+fmt(dur-cur)) : '', cx, cy+W*0.042);
+
+  if(!dragging){
+    ctx2.fillStyle = au.paused ? '#D9A24B' : '#39456B';
+    ctx2.font = `600 ${Math.round(W*0.028)}px "IBM Plex Sans Condensed", sans-serif`;
+    ctx2.fillText(au.paused ? 'TAP TO PLAY' : 'PLAYING', cx, cy+W*0.10);
+  }
+}
+
+let rafId=0;
+function loop(){ drawDial(); paintWords(); rafId=requestAnimationFrame(loop); }
+function startLoop(){ if(!rafId) loop(); }
+function stopLoop(){ if(rafId){ cancelAnimationFrame(rafId); rafId=0; } }
+
+function dialPoint(ev){
+  const r=cv.getBoundingClientRect();
+  const x=ev.clientX-r.left-r.width/2, y=ev.clientY-r.top-r.height/2;
+  return {x,y,dist:Math.hypot(x,y),rad:r.width/2};
+}
+function angleToTime(x,y){
+  let a=Math.atan2(y,x)+Math.PI/2; if(a<0) a+=Math.PI*2;
+  const dur = book ? (book.dur||au.duration||0) : 0;
+  return (a/(Math.PI*2))*dur;
+}
+cv.addEventListener('pointerdown', ev=>{
+  if(!book) return;
+  const p=dialPoint(ev);
+  if(p.dist < p.rad*0.50){ togglePlay(); return; }
+  dragging=true; dragT=angleToTime(p.x,p.y); cv.setPointerCapture(ev.pointerId);
+});
+cv.addEventListener('pointermove', ev=>{ if(dragging){ const p=dialPoint(ev); dragT=angleToTime(p.x,p.y); } });
+function endDrag(){
+  if(!dragging) return;
+  dragging=false; au.currentTime=dragT; syncScript(true); save();
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+
+/* ============================================================
+   PLAYBACK
+   ============================================================ */
+function togglePlay(){
+  if(!book){ toast('Add a book first'); return; }
+  if(au.paused){
+    ensureGraph();
+    if(actx && actx.state==='suspended') actx.resume();
+    au.play().catch(()=>toast('Tap once more to start'));
+  } else au.pause();
+}
+$('#back15').onclick = ()=>{ au.currentTime=Math.max(0,au.currentTime-15); syncScript(true); save(); };
+$('#fwd15').onclick  = ()=>{ au.currentTime=Math.min(au.duration||1e9,au.currentTime+15); syncScript(true); save(); };
+
+$('#speedbtn').onclick = ()=>{
+  speedIdx=(speedIdx+1)%SPEEDS.length;
+  au.playbackRate=SPEEDS[speedIdx];
+  $('#speedbtn').textContent=SPEEDS[speedIdx].toFixed(2).replace(/0$/,'')+'×';
+  localStorage.setItem('nar_speed',speedIdx);
+};
+$('#pocketbtn').onclick = ()=>{
+  if(actx){ toast('Reload to leave visualizer mode'); return; }
+  pocket=!pocket;
+  $('#pocketbtn').classList.toggle('on',pocket);
+  localStorage.setItem('nar_pocket',pocket?'1':'0');
+  toast(pocket?'Pocket mode on — audio only':'Pocket mode off');
+};
+
+function nudge(d){
+  if(!book) return;
+  book.offset = Math.round(((book.offset||0)+d)*100)/100;
+  showSync(); dbPut(book); syncScript(true);
+}
+$('#syncdown').onclick = ()=>nudge(-0.25);
+$('#syncup').onclick   = ()=>nudge(+0.25);
+function showSync(){
+  const v = offset();
+  $('#syncval').textContent = (v>0?'+':'') + v.toFixed(2) + 's';
+}
+
+au.addEventListener('play',  ()=>{ startLoop(); mediaState(); });
+au.addEventListener('pause', ()=>{ save(); mediaState(); });
+au.addEventListener('loadedmetadata', ()=>{ if(book && (!book.dur||!isFinite(book.dur))){ book.dur=au.duration; save(); } });
+au.addEventListener('timeupdate', ()=>syncScript(false));
+au.addEventListener('ended', save);
+
+setInterval(()=>{ if(book && !au.paused) save(); }, 5000);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ stopLoop(); save(); }
+  else { if(actx && actx.state==='suspended') actx.resume(); startLoop(); }
+});
+window.addEventListener('pagehide', save);
+
+function save(){
+  if(!book) return;
+  book.pos = au.currentTime || book.pos || 0;
+  dbPut(book).catch(()=>{});
+}
+
+function mediaMeta(){
+  if(!('mediaSession' in navigator) || !book) return;
+  navigator.mediaSession.metadata = new MediaMetadata({title:book.title, artist:'Narrator', album:'Audiobook'});
+  const h=navigator.mediaSession;
+  h.setActionHandler('play', ()=>togglePlay());
+  h.setActionHandler('pause', ()=>au.pause());
+  h.setActionHandler('seekbackward', ()=>{ au.currentTime=Math.max(0,au.currentTime-15); });
+  h.setActionHandler('seekforward', ()=>{ au.currentTime+=15; });
+  try{ h.setActionHandler('seekto', d=>{ if(d.seekTime!=null) au.currentTime=d.seekTime; }); }catch(e){}
+}
+function mediaState(){ if('mediaSession' in navigator) navigator.mediaSession.playbackState = au.paused?'paused':'playing'; }
+
+/* ============================================================
+   MARKS
+   ============================================================ */
+function openMarkInput(){
+  if(!book){ toast('Add a book first'); return; }
+  showPane('play');
+  const row=$('#markrow');
+  row.classList.add('open');
+  row.dataset.t = au.currentTime;
+  $('#marktext').value=''; $('#marktext').focus();
+}
+$('#markbtn').onclick = ()=>{
+  if(!book){ toast('Add a book first'); return; }
+  const row=$('#markrow');
+  if(row.classList.contains('open')){ row.classList.remove('open'); return; }
+  openMarkInput();
+};
+$('#markbtn2').onclick = openMarkInput;
+$('#marksave').onclick = saveMark;
+$('#marktext').addEventListener('keydown', e=>{ if(e.key==='Enter') saveMark(); });
+
+function saveMark(){
+  const row=$('#markrow');
+  const note=$('#marktext').value.trim();
+  const t=parseFloat(row.dataset.t||au.currentTime);
+  book.marks = book.marks||[];
+  book.marks.push({t, note: note||'Mark'});
+  book.marks.sort((a,b)=>a.t-b.t);
+  dbPut(book);
+  row.classList.remove('open'); $('#marktext').blur();
+  renderMarks(); toast('Marked at '+fmt(t));
+}
+
+function renderMarks(){
+  const el=$('#markslist');
+  if(!book){ el.innerHTML='<div class="empty">Load a book to start marking moments.</div>'; return; }
+  const ms=book.marks||[];
+  if(!ms.length){ el.innerHTML='<div class="empty">No marks yet. Hit <b>+ Mark this moment</b> above, or the <b>+ Mark</b> button under the dial on the Playing tab, and type a note — it saves the exact second.</div>'; return; }
+  el.innerHTML='';
+  ms.forEach((m,i)=>{
+    const row=document.createElement('div');
+    row.className='row';
+    row.innerHTML=`<div class="stamp">${fmt(m.t)}</div><div class="body"><div class="note"></div></div><button class="kill" aria-label="Delete mark">&times;</button>`;
+    row.querySelector('.note').textContent=m.note;
+    row.onclick=e=>{
+      if(e.target.closest('.kill')) return;
+      au.currentTime=m.t; showPane('play'); syncScript(true);
+      if(au.paused) togglePlay();
+    };
+    row.querySelector('.kill').onclick=e=>{ e.stopPropagation(); book.marks.splice(i,1); dbPut(book); renderMarks(); };
+    el.appendChild(row);
+  });
+}
+
+/* ============================================================
+   TRANSCRIPT
+   ============================================================ */
+function parseTranscript(text){
+  const t=text.trim();
+  if(t.startsWith('[')||t.startsWith('{')){
+    let j=JSON.parse(t);
+    if(!Array.isArray(j)) j=j.segments||j.lines||j.words||[];
+    return j.map(o=>({
+      t: parseFloat(o.t ?? o.start ?? o.time ?? o.begin ?? 0),
+      e: (o.e ?? o.end) != null ? parseFloat(o.e ?? o.end) : null,
+      text: String(o.text ?? o.word ?? o.line ?? '').trim()
+    })).filter(o=>o.text).sort((a,b)=>a.t-b.t);
+  }
+  const out=[];
+  const re=/(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-\->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})/;
+  for(const b of t.replace(/\r/g,'').split(/\n\s*\n/)){
+    const m=re.exec(b);
+    if(!m) continue;
+    const s=(+m[1])*3600+(+m[2])*60+(+m[3])+(+m[4])/1000;
+    const e=(+m[5])*3600+(+m[6])*60+(+m[7])+(+m[8])/1000;
+    const body=b.split('\n').filter(l=>!l.includes('-->')&&!/^\d+$/.test(l.trim())&&!/^WEBVTT/i.test(l)).join(' ').trim();
+    if(body) out.push({t:s, e, text:body});
+  }
+  return out.sort((a,b)=>a.t-b.t);
+}
+
+function renderScript(){
+  const el=$('#script');
+  const lines=(book&&book.lines)||[];
+  nowEl=null; nowWords=[]; lineIdx=-1;
+  if(!lines.length){
+    el.innerHTML=`<div class="empty">
+      <b>No transcript loaded for this book.</b><br><br>
+      Add one from the Library tab and the text will follow the voice, word by word.
+      Accepts <code>.json</code>, <code>.srt</code>, or <code>.vtt</code>.<br><br>
+      Simplest format — start second, end second, line:
+      <pre>[
+ {"t": 0.0, "e": 3.9, "text": "Gauss's law for electricity."},
+ {"t": 4.2, "e": 9.1, "text": "The divergence of E equals rho over epsilon zero."}
+]</pre>
+      <code>e</code> is optional — without it the next line's start is used.
+    </div>`;
+    return;
+  }
+  el.innerHTML='';
+  lines.forEach((l,i)=>{
+    const p=document.createElement('p');
+    p.className='line'; p.dataset.i=i;
+    /* split into words, each carrying its cumulative share of the line so the
+       highlight can sweep across at the right rate */
+    const words=l.text.split(/(\s+)/);
+    const total=l.text.replace(/\s+/g,'').length||1;
+    let seen=0;
+    words.forEach(w=>{
+      const span=document.createElement('span');
+      span.textContent=w;
+      if(w.trim()){ seen+=w.length; span.dataset.f=(seen/total).toFixed(4); }
+      p.appendChild(span);
+    });
+    p.onclick=()=>{ au.currentTime=Math.max(0,l.t-offset()); syncScript(true); if(au.paused) togglePlay(); };
+    el.appendChild(p);
+  });
+  syncScript(true);
+}
+
+function findLine(time, lines){
+  let lo=0, hi=lines.length-1, ans=-1;
+  while(lo<=hi){ const mid=(lo+hi)>>1; if(lines[mid].t<=time){ ans=mid; lo=mid+1; } else hi=mid-1; }
+  return ans;
+}
+
+function syncScript(force){
+  const lines=(book&&book.lines)||[];
+  if(!lines.length) return;
+  const i=findLine(clock(), lines);
+  if(i===lineIdx && !force) return;
+  lineIdx=i;
+
+  const el=$('#script');
+  el.querySelectorAll('.line').forEach(p=>{
+    const n=+p.dataset.i;
+    const isNow = n===i;
+    p.classList.toggle('now', isNow);
+    p.classList.toggle('done', n<i);
+    if(!isNow) p.querySelectorAll('span').forEach(s=>s.classList.remove('said','saying'));
+  });
+
+  nowEl = i>=0 ? el.querySelector('.line.now') : null;
+  nowWords = nowEl ? [...nowEl.querySelectorAll('span[data-f]')] : [];
+  if(i>=0){
+    nowStart = lines[i].t;
+    nowEnd = lines[i].e != null ? lines[i].e
+           : (lines[i+1] ? lines[i+1].t : nowStart + Math.max(2, lines[i].text.length/14));
+    if(nowEnd <= nowStart) nowEnd = nowStart + 2;
+  }
+
+  if(nowEl && (force || Date.now()-userScrolled > 4500)){
+    const delta  = nowEl.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    const target = Math.max(0, el.scrollTop + delta - el.clientHeight*0.30);
+    const jump   = Math.abs(target - el.scrollTop) > el.clientHeight*1.5;
+    el.scrollTo({ top: target, behavior: (force || jump) ? 'auto' : 'smooth' });
+  }
+}
+
+/* runs every frame: sweeps the highlight across the active line's words */
+function paintWords(){
+  if(!nowWords.length) return;
+  const p = Math.min(1, Math.max(0, (clock()-nowStart)/(nowEnd-nowStart)));
+  for(let k=0;k<nowWords.length;k++){
+    const s=nowWords[k], f=+s.dataset.f;
+    const prev = k ? +nowWords[k-1].dataset.f : 0;
+    const said = f <= p;
+    const saying = !said && prev <= p;
+    if(s.classList.contains('said')!==said) s.classList.toggle('said', said);
+    if(s.classList.contains('saying')!==saying) s.classList.toggle('saying', saying);
+  }
+}
+
+$('#script').addEventListener('pointerdown', ()=>{ userScrolled=Date.now(); });
+$('#script').addEventListener('wheel', ()=>{ userScrolled=Date.now(); }, {passive:true});
+
+/* ============================================================
+   LIBRARY
+   ============================================================ */
+$('#audiofile').addEventListener('change', async ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  toast('Importing…');
+  const rec={ id:'b_'+Date.now().toString(36), title:f.name.replace(/\.[^.]+$/,''),
+              blob:f, dur:0, pos:0, offset:0, marks:[], lines:[], added:Date.now() };
+  await dbPut(rec);
+  ev.target.value='';
+  await renderLibrary(); openBook(rec.id); toast('Added');
+});
+
+async function renderLibrary(){
+  const all=(await dbAll()).sort((a,b)=>b.added-a.added);
+  const el=$('#liblist');
+  if(!all.length){
+    el.innerHTML='<div class="empty">Nothing here yet. Add a book below — the file is copied into this app, so it stays put and keeps its own position and marks.</div>';
+    return;
+  }
+  el.innerHTML='';
+  all.forEach(b=>{
+    const pct=b.dur?Math.min(100,b.pos/b.dur*100):0;
+    const row=document.createElement('div');
+    row.className='row'+(book&&book.id===b.id?' playing':'');
+    row.innerHTML=`<div class="body">
+        <div class="note"></div>
+        <div class="sub">${b.dur?fmt(b.pos)+' of '+fmt(b.dur):'Not started'}
+          &nbsp;·&nbsp; ${(b.marks||[]).length} marks
+          &nbsp;·&nbsp; ${(b.lines||[]).length?(b.lines.length+' lines'):'no transcript'}</div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+      </div>
+      <button class="kill" data-act="script" aria-label="Add transcript" style="font-size:14px;font-family:var(--f-label);letter-spacing:.1em">TXT</button>
+      <button class="kill" data-act="del" aria-label="Delete book">&times;</button>`;
+    row.querySelector('.note').textContent=b.title;
+    row.onclick=e=>{
+      const act=e.target.closest('[data-act]')?.dataset.act;
+      if(act==='del'){
+        e.stopPropagation();
+        if(book&&book.id===b.id){ au.pause(); au.removeAttribute('src'); book=null; $('#booktitle').textContent='No book loaded'; renderScript(); renderMarks(); showSync(); }
+        dbDel(b.id).then(renderLibrary);
+        return;
+      }
+      if(act==='script'){ e.stopPropagation(); pickTranscript(b.id); return; }
+      openBook(b.id);
+    };
+    el.appendChild(row);
+  });
+}
+
+function pickTranscript(id){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.json,.srt,.vtt,text/plain,application/json';
+  inp.onchange=async ()=>{
+    const f=inp.files[0]; if(!f) return;
+    try{
+      const lines=parseTranscript(await f.text());
+      if(!lines.length){ toast('No timed lines found in that file'); return; }
+      const rec=await dbGet(id);
+      rec.lines=lines; await dbPut(rec);
+      if(book&&book.id===id){ book.lines=lines; renderScript(); }
+      await renderLibrary(); toast(lines.length+' lines linked');
+    }catch(e){ toast('Could not read that file'); }
+  };
+  inp.click();
+}
+
+async function openBook(id){
+  save();
+  book=await dbGet(id); if(!book) return;
+  if(objURL) URL.revokeObjectURL(objURL);
+  objURL=URL.createObjectURL(book.blob);
+  au.src=objURL; au.playbackRate=SPEEDS[speedIdx];
+  $('#booktitle').textContent=book.title;
+  au.currentTime=0;
+  const seek=()=>{ if(book.pos>1){ try{ au.currentTime=book.pos; }catch(e){} } syncScript(true); };
+  if(au.readyState>=1) seek(); else au.addEventListener('loadedmetadata', seek, {once:true});
+  localStorage.setItem('nar_last', id);
+  showSync(); renderScript(); renderMarks(); renderLibrary(); mediaMeta();
+  showPane('play'); sizeDial(); drawDial();
+  if(book.pos>1) toast('Resumed at '+fmt(book.pos));
+}
+
+/* ============================================================
+   TABS + BOOT
+   ============================================================ */
+function showPane(name){
+  document.querySelectorAll('nav button').forEach(b=>b.setAttribute('aria-selected', b.dataset.pane===name));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active', p.id==='pane-'+name));
+  if(name==='play'){ sizeDial(); drawDial(); syncScript(true); }
+  if(name==='marks') renderMarks();
+  if(name==='library') renderLibrary();
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showPane(b.dataset.pane));
+
+(async function boot(){
+  speedIdx=Math.min(SPEEDS.length-1,Math.max(0,parseInt(localStorage.getItem('nar_speed')||'0',10)));
+  $('#speedbtn').textContent=SPEEDS[speedIdx].toFixed(2).replace(/0$/,'')+'×';
+  pocket=localStorage.getItem('nar_pocket')==='1';
+  $('#pocketbtn').classList.toggle('on',pocket);
+  showSync();
+
+  if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  sizeDial(); drawDial(); startLoop();
+
+  try{
+    await renderLibrary();
+    const last=localStorage.getItem('nar_last');
+    if(last && await dbGet(last)) await openBook(last);
+    else { renderScript(); renderMarks(); }
+  }catch(e){
+    $('#liblist').innerHTML='<div class="empty"><b>Storage is blocked.</b> This happens when the page is opened straight off the file system. Serve it over http or https — see the note at the bottom of this file.</div>';
+  }
+})();
+</script>
+
+<!-- Run command (serve locally, then open the printed URL):
+     cd /d "C:\Users\xeven\Desktop\9JULY" && python -m http.server 8000 --bind 0.0.0.0
+
+     Open http://localhost:8000/AUDIOAPP.HTML on the PC, or
+     http://<pc-ip>:8000/AUDIOAPP.HTML on the phone over the same Wi-Fi.
+-->
+</body>
+</html>
