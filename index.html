@@ -163,6 +163,9 @@
   .row .note{font-family:var(--f-read); font-size:16px; line-height:1.35;}
   .row .sub{font-family:var(--f-label); font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim); margin-top:5px;}
   .row .kill{background:none; border:0; color:var(--dim); font-size:22px; line-height:1; padding:6px 2px; cursor:pointer; flex:0 0 auto;}
+  .row .thumb{width:48px; height:48px; border-radius:8px; object-fit:cover; flex:0 0 auto;
+    background:var(--ink-raised); border:1px solid var(--ink-line);
+    display:grid; place-items:center; font-family:var(--f-label); font-weight:600; font-size:18px; color:var(--dim);}
   .row.playing .note{color:var(--brass);}
   .bar{height:2px; background:var(--ink-line); margin-top:9px; border-radius:2px;}
   .bar i{display:block; height:100%; background:var(--cyan); border-radius:2px;}
@@ -195,7 +198,7 @@
 
 <header>
   <div style="min-width:0;flex:1 1 auto">
-    <div class="eyebrow">Narrator <span id="build">b3</span></div>
+    <div class="eyebrow">Narrator <span id="build">b4</span></div>
     <div class="title" id="booktitle">No book loaded</div>
   </div>
   <button class="iconbtn" id="speedbtn" title="Playback speed">1.0×</button>
@@ -352,6 +355,18 @@ function drawDial(){
 
   ctx2.clearRect(0,0,W,H);
 
+  /* cover art fills the face of the dial, darkened so the clock stays readable */
+  const hasCover = coverImg && coverImg.complete && coverImg.naturalWidth;
+  if(hasCover){
+    const rc = R - ringW*9;
+    ctx2.save();
+    ctx2.beginPath(); ctx2.arc(cx,cy,rc,0,Math.PI*2); ctx2.clip();
+    ctx2.drawImage(coverImg, cx-rc, cy-rc, rc*2, rc*2);
+    ctx2.fillStyle='rgba(11,16,32,0.52)';
+    ctx2.fillRect(cx-rc, cy-rc, rc*2, rc*2);
+    ctx2.restore();
+  }
+
   const live = analyser && !au.paused && !document.hidden;
   if(live) analyser.getByteFrequencyData(freq);
   for(let i=0;i<bars.length;i++){
@@ -400,19 +415,22 @@ function drawDial(){
   }
 
   ctx2.textAlign='center'; ctx2.textBaseline='middle';
+  if(hasCover){ ctx2.shadowColor='rgba(0,0,0,0.85)'; ctx2.shadowBlur=W*0.02; }
   ctx2.fillStyle = dragging ? '#D9A24B' : '#F2EFE6';
   ctx2.font = `500 ${Math.round(W*0.098)}px "IBM Plex Mono", monospace`;
-  ctx2.fillText(fmt(cur), cx, cy-W*0.035);
+  ctx2.fillText(fmt(cur), cx, cy-W*0.045);
 
-  ctx2.fillStyle='#6C7691';
-  ctx2.font = `600 ${Math.round(W*0.032)}px "IBM Plex Sans Condensed", sans-serif`;
-  ctx2.fillText(dur ? ('\u2212'+fmt(dur-cur)) : '', cx, cy+W*0.042);
+  /* time left: about 60% of the elapsed size and near-white, so it reads at arm's length */
+  ctx2.fillStyle='#C9D0E4';
+  ctx2.font = `500 ${Math.round(W*0.06)}px "IBM Plex Mono", monospace`;
+  ctx2.fillText(dur ? ('\u2212'+fmt(dur-cur)) : '', cx, cy+W*0.048);
 
   if(!dragging){
-    ctx2.fillStyle = au.paused ? '#D9A24B' : '#39456B';
-    ctx2.font = `600 ${Math.round(W*0.028)}px "IBM Plex Sans Condensed", sans-serif`;
-    ctx2.fillText(au.paused ? 'TAP TO PLAY' : 'PLAYING', cx, cy+W*0.10);
+    ctx2.fillStyle = au.paused ? '#D9A24B' : '#7E89A8';
+    ctx2.font = `600 ${Math.round(W*0.032)}px "IBM Plex Sans Condensed", sans-serif`;
+    ctx2.fillText(au.paused ? 'TAP TO PLAY' : 'PLAYING', cx, cy+W*0.122);
   }
+  ctx2.shadowBlur=0; ctx2.shadowColor='transparent';
 }
 
 let rafId=0;
@@ -513,7 +531,10 @@ function save(){
 
 function mediaMeta(){
   if(!('mediaSession' in navigator) || !book) return;
-  navigator.mediaSession.metadata = new MediaMetadata({title:book.title, artist:'Narrator', album:'Audiobook'});
+  /* the cover also shows on the lock screen and in the notification */
+  const art = book.cover ? [{src:book.cover, sizes:'600x600', type:'image/jpeg'}]
+                         : [{src:'icon-512.png', sizes:'512x512', type:'image/png'}];
+  navigator.mediaSession.metadata = new MediaMetadata({title:book.title, artist:'Narrator', album:'Audiobook', artwork:art});
   const h=navigator.mediaSession;
   h.setActionHandler('play', ()=>togglePlay());
   h.setActionHandler('pause', ()=>au.pause());
@@ -724,25 +745,30 @@ async function renderLibrary(){
     const pct=b.dur?Math.min(100,b.pos/b.dur*100):0;
     const row=document.createElement('div');
     row.className='row'+(book&&book.id===b.id?' playing':'');
-    row.innerHTML=`<div class="body">
+    row.innerHTML=`${b.cover ? '<img class="thumb" alt="">' : '<div class="thumb"></div>'}
+      <div class="body">
         <div class="note"></div>
         <div class="sub">${b.dur?fmt(b.pos)+' of '+fmt(b.dur):'Not started'}
           &nbsp;·&nbsp; ${(b.marks||[]).length} marks
           &nbsp;·&nbsp; ${(b.lines||[]).length?(b.lines.length+' lines'):'no transcript'}</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
       </div>
+      <button class="kill" data-act="cover" aria-label="Add cover art" style="font-size:14px;font-family:var(--f-label);letter-spacing:.1em">ART</button>
       <button class="kill" data-act="script" aria-label="Add transcript" style="font-size:14px;font-family:var(--f-label);letter-spacing:.1em">TXT</button>
       <button class="kill" data-act="del" aria-label="Delete book">&times;</button>`;
     row.querySelector('.note').textContent=b.title;
+    const th=row.querySelector('.thumb');
+    if(b.cover) th.src=b.cover; else th.textContent=(b.title||'?').trim().charAt(0).toUpperCase();
     row.onclick=e=>{
       const act=e.target.closest('[data-act]')?.dataset.act;
       if(act==='del'){
         e.stopPropagation();
-        if(book&&book.id===b.id){ au.pause(); au.removeAttribute('src'); book=null; $('#booktitle').textContent='No book loaded'; renderScript(); renderMarks(); showSync(); }
+        if(book&&book.id===b.id){ au.pause(); au.removeAttribute('src'); book=null; coverImg=null; $('#booktitle').textContent='No book loaded'; renderScript(); renderMarks(); showSync(); }
         dbDel(b.id).then(renderLibrary);
         return;
       }
       if(act==='script'){ e.stopPropagation(); pickTranscript(b.id); return; }
+      if(act==='cover'){ e.stopPropagation(); pickCover(b.id); return; }
       openBook(b.id);
     };
     el.appendChild(row);
@@ -766,6 +792,35 @@ function pickTranscript(id){
   inp.click();
 }
 
+/* cover art: centre-cropped to a 600px square JPEG and stored on the book record
+   as a data URL, so it survives updates exactly like positions and marks do */
+let coverImg = null;
+function loadCover(){
+  coverImg = null;
+  if(book && book.cover){ coverImg = new Image(); coverImg.onload = drawDial; coverImg.src = book.cover; }
+}
+function pickCover(id){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange=async ()=>{
+    const f=inp.files[0]; if(!f) return;
+    try{
+      const url=URL.createObjectURL(f);
+      const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+      const side=Math.min(img.naturalWidth,img.naturalHeight), S=600;
+      const c=document.createElement('canvas'); c.width=S; c.height=S;
+      c.getContext('2d').drawImage(img,(img.naturalWidth-side)/2,(img.naturalHeight-side)/2,side,side,0,0,S,S);
+      URL.revokeObjectURL(url);
+      const data=c.toDataURL('image/jpeg',0.86);
+      const rec=await dbGet(id);
+      rec.cover=data; await dbPut(rec);
+      if(book&&book.id===id){ book.cover=data; loadCover(); mediaMeta(); }
+      await renderLibrary(); toast('Cover added');
+    }catch(e){ toast('Could not read that image'); }
+  };
+  inp.click();
+}
+
 async function openBook(id){
   save();
   book=await dbGet(id); if(!book) return;
@@ -777,6 +832,7 @@ async function openBook(id){
   const seek=()=>{ if(book.pos>1){ try{ au.currentTime=book.pos; }catch(e){} } syncScript(true); };
   if(au.readyState>=1) seek(); else au.addEventListener('loadedmetadata', seek, {once:true});
   localStorage.setItem('nar_last', id);
+  loadCover();
   showSync(); renderScript(); renderMarks(); renderLibrary(); mediaMeta();
   showPane('play'); sizeDial(); drawDial();
   if(book.pos>1) toast('Resumed at '+fmt(book.pos));
