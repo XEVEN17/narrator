@@ -9,7 +9,7 @@
 
    Bump CACHE on every release. Changing these bytes is what makes the browser
    notice there is a new worker at all. */
-const CACHE = 'narrator-v3';
+const CACHE = 'narrator-v4';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

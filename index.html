@@ -78,6 +78,25 @@
   .pane{position:absolute; inset:0; display:none; flex-direction:column; min-height:0;}
   .pane.active{display:flex;}
 
+  /* ---------- deck: dial + controls, with the book cover filling the area behind them ---------- */
+  #deck{position:relative; flex:0 0 auto; overflow:hidden;}
+  #deck > *:not(#coverbg){position:relative; z-index:1;}
+  #coverbg{
+    position:absolute; inset:0; z-index:0; display:none;
+    background-size:cover; background-position:center;
+  }
+  #coverbg::after{
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(to bottom, rgba(11,16,32,.30) 0%, rgba(11,16,32,.45) 55%, rgba(11,16,32,.80) 88%, var(--ink) 100%);
+  }
+  #deck.has-cover #coverbg{display:block;}
+  #deck.has-cover #transport button,
+  #deck.has-cover .steprow button{background:rgba(11,16,32,.62); border-color:rgba(242,239,230,.28); color:var(--paper);}
+  #deck.has-cover .steprow .lbl{color:var(--paper);}
+  #deck.has-cover .steprow,
+  #deck.has-cover .steprow .val{text-shadow:0 1px 4px rgba(0,0,0,.9);}
+  #deck.has-cover .steprow .val{background:rgba(11,16,32,.55); border-radius:999px; padding:3px 0;}
+
   /* ---------- dial ---------- */
   #dialwrap{flex:0 0 auto; display:grid; place-items:center; padding:8px 0 0;}
   #dial{touch-action:none; display:block;}
@@ -198,7 +217,7 @@
 
 <header>
   <div style="min-width:0;flex:1 1 auto">
-    <div class="eyebrow">Narrator <span id="build">b4</span></div>
+    <div class="eyebrow">Narrator <span id="build">b5</span></div>
     <div class="title" id="booktitle">No book loaded</div>
   </div>
   <button class="iconbtn" id="speedbtn" title="Playback speed">1.0×</button>
@@ -213,6 +232,8 @@
 
 <main>
   <section class="pane active" id="pane-play">
+   <div id="deck">
+    <div id="coverbg"></div>
     <div id="dialwrap"><canvas id="dial"></canvas></div>
 
     <div id="transport">
@@ -239,6 +260,7 @@
       <input id="marktext" type="text" placeholder="Note for this moment" autocomplete="off">
       <button id="marksave">Save</button>
     </div>
+   </div>
 
     <div id="script"></div>
   </section>
@@ -355,16 +377,11 @@ function drawDial(){
 
   ctx2.clearRect(0,0,W,H);
 
-  /* cover art fills the face of the dial, darkened so the clock stays readable */
-  const hasCover = coverImg && coverImg.complete && coverImg.naturalWidth;
+  /* with a cover behind the deck, give the dial a dark glass face so the clock stays readable */
+  const hasCover = !!(book && book.cover);
   if(hasCover){
-    const rc = R - ringW*9;
-    ctx2.save();
-    ctx2.beginPath(); ctx2.arc(cx,cy,rc,0,Math.PI*2); ctx2.clip();
-    ctx2.drawImage(coverImg, cx-rc, cy-rc, rc*2, rc*2);
-    ctx2.fillStyle='rgba(11,16,32,0.52)';
-    ctx2.fillRect(cx-rc, cy-rc, rc*2, rc*2);
-    ctx2.restore();
+    ctx2.fillStyle='rgba(11,16,32,0.58)';
+    ctx2.beginPath(); ctx2.arc(cx,cy,R+ringW*1.5,0,Math.PI*2); ctx2.fill();
   }
 
   const live = analyser && !au.paused && !document.hidden;
@@ -763,7 +780,7 @@ async function renderLibrary(){
       const act=e.target.closest('[data-act]')?.dataset.act;
       if(act==='del'){
         e.stopPropagation();
-        if(book&&book.id===b.id){ au.pause(); au.removeAttribute('src'); book=null; coverImg=null; $('#booktitle').textContent='No book loaded'; renderScript(); renderMarks(); showSync(); }
+        if(book&&book.id===b.id){ au.pause(); au.removeAttribute('src'); book=null; loadCover(); $('#booktitle').textContent='No book loaded'; renderScript(); renderMarks(); showSync(); }
         dbDel(b.id).then(renderLibrary);
         return;
       }
@@ -797,7 +814,15 @@ function pickTranscript(id){
 let coverImg = null;
 function loadCover(){
   coverImg = null;
-  if(book && book.cover){ coverImg = new Image(); coverImg.onload = drawDial; coverImg.src = book.cover; }
+  const deck=$('#deck'), bg=$('#coverbg');
+  if(book && book.cover){
+    bg.style.backgroundImage = `url("${book.cover}")`;
+    deck.classList.add('has-cover');
+  } else {
+    bg.style.backgroundImage = '';
+    deck.classList.remove('has-cover');
+  }
+  drawDial();
 }
 function pickCover(id){
   const inp=document.createElement('input');
